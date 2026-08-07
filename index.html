@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Vault Run</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono&display=swap');
+
+  :root {
+    --bg: #0a0a0c;
+    --gold: #d4af37;
+    --gold-bright: #f0d878;
+    --blue: #3a6ea5;
+    --text: #e8e6e1;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+  }
+
+  #canvas-wrap { position: relative; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+
+  #hud {
+    position: absolute;
+    top: 24px; left: 0; right: 0;
+    display: flex; flex-direction: column; align-items: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #title {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.4rem;
+    letter-spacing: 0.08em;
+    color: var(--gold-bright);
+    text-shadow: 0 0 18px rgba(212,175,55,0.35);
+  }
+
+  #score {
+    font-family: 'DM Mono', monospace;
+    font-size: 1rem;
+    color: var(--text);
+    margin-top: 6px;
+    opacity: 0.85;
+    letter-spacing: 0.05em;
+  }
+
+  #coinCount {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--gold-bright);
+    margin-top: 3px;
+    opacity: 0.9;
+    letter-spacing: 0.05em;
+  }
+
+  #best {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--gold);
+    margin-top: 2px;
+    opacity: 0.7;
+  }
+
+  #diffChoice {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 26px;
+  }
+
+  .diffBtn {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    padding: 10px 22px;
+    background: transparent;
+    border: 1px solid rgba(212,175,55,0.4);
+    color: var(--text);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s ease;
+  }
+
+  .diffBtn:hover, .diffBtn.selected {
+    border-color: var(--gold);
+    background: rgba(212,175,55,0.12);
+    color: var(--gold-bright);
+  }
+
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(10,10,12,0.55) 0%, rgba(10,10,12,0.92) 75%);
+    text-align: center;
+    z-index: 20;
+    transition: opacity 0.3s ease;
+  }
+
+  #overlay h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.4rem;
+    color: var(--gold-bright);
+    margin-bottom: 10px;
+    text-shadow: 0 0 24px rgba(212,175,55,0.4);
+  }
+
+  #overlay p {
+    font-size: 0.95rem;
+    opacity: 0.75;
+    max-width: 380px;
+    margin-bottom: 26px;
+    line-height: 1.5;
+  }
+
+  #overlay .accent { color: var(--gold); }
+
+  #startBtn {
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    padding: 14px 38px;
+    background: transparent;
+    border: 1px solid var(--gold);
+    color: var(--gold-bright);
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.25s ease;
+  }
+
+  #startBtn:hover {
+    background: var(--gold);
+    color: #0a0a0c;
+    box-shadow: 0 0 30px rgba(212,175,55,0.4);
+  }
+
+  .hidden { opacity: 0; pointer-events: none; }
+
+  #hint {
+    position: absolute;
+    bottom: 22px; left: 0; right: 0;
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    opacity: 0.4;
+    z-index: 10;
+  }
+
+  #controllerHint {
+    position: absolute;
+    top: 24px; right: 24px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    color: var(--gold-bright);
+    background: rgba(212,175,55,0.1);
+    border: 1px solid rgba(212,175,55,0.4);
+    padding: 6px 12px;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: all 0.3s ease;
+    z-index: 15;
+    max-width: 260px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  #controllerHint.show {
+    opacity: 0.9;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap">
+  <div id="hud">
+    <div id="title">THE VAULT RUN</div>
+    <div id="score">DISTANCE: 0m</div>
+    <div id="coinCount">COINS: 0</div>
+    <div id="best">BEST: 0m</div>
+  </div>
+
+  <div id="overlay">
+    <h1>The Vault Run</h1>
+    <p>Three lanes. No mercy. Weave through the vault before it collapses on you.<br><span class="accent">← → to switch lanes · ↑ to jump</span></p>
+    <div id="diffChoice">
+      <button class="diffBtn" data-speed="0.05">Easy</button>
+      <button class="diffBtn selected" data-speed="0.08">Medium</button>
+      <button class="diffBtn" data-speed="0.12">Hard</button>
+    </div>
+    <button id="startBtn">Begin the Run</button>
+  </div>
+
+  <div id="hint">← → SWITCH LANE &nbsp;·&nbsp; ↑ JUMP &nbsp;·&nbsp; OR USE A CONTROLLER</div>
+  <div id="controllerHint">CONTROLLER CONNECTED</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  const wrap = document.getElementById('canvas-wrap');
+  const scoreEl = document.getElementById('score');
+  const coinCountEl = document.getElementById('coinCount');
+  const bestEl = document.getElementById('best');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const overlayTitle = overlay.querySelector('h1');
+  const overlayText = overlay.querySelector('p');
+  const diffButtons = Array.from(document.querySelectorAll('.diffBtn'));
+  const controllerHint = document.getElementById('controllerHint');
+
+  let best = 0;
+  try { best = parseInt(localStorage.getItem('vaultRunBest') || '0', 10); } catch(e) { best = 0; }
+  bestEl.textContent = 'BEST: ' + best + 'm';
+
+  let baseSpeed = 0.08; // medium default
+  diffButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      diffButtons.forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      baseSpeed = parseFloat(btn.dataset.speed);
+    });
+  });
+
+  // ---- Three.js setup ----
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x0a0a0c, 8, 42);
+  scene.background = new THREE.Color(0x0a0a0c);
+
+  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 100);
+  camera.position.set(0, 4.2, 7.5);
+  camera.lookAt(0, 1, -6);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  wrap.appendChild(renderer.domElement);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ---- Lighting ----
+  const ambient = new THREE.AmbientLight(0x3a3a40, 1.1);
+  scene.add(ambient);
+
+  const goldLight = new THREE.PointLight(0xd4af37, 1.4, 30);
+  goldLight.position.set(0, 6, 2);
+  scene.add(goldLight);
+
+  const blueLight = new THREE.DirectionalLight(0x3a6ea5, 0.5);
+  blueLight.position.set(-5, 8, -10);
+  scene.add(blueLight);
+
+  // ---- Track ----
+  const LANE_X = [-2.2, 0, 2.2];
+  const trackGeo = new THREE.PlaneGeometry(7.5, 200);
+  const trackMat = new THREE.MeshStandardMaterial({ color: 0x131316, roughness: 0.85, metalness: 0.2 });
+  const track = new THREE.Mesh(trackGeo, trackMat);
+  track.rotation.x = -Math.PI / 2;
+  track.position.set(0, 0, -80);
+  scene.add(track);
+
+  // lane divider lines (gold)
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xd4af37, transparent: true, opacity: 0.35 });
+  [-1.1, 1.1].forEach((x) => {
+    const lineGeo = new THREE.PlaneGeometry(0.04, 200);
+    const line = new THREE.Mesh(lineGeo, lineMat);
+    line.rotation.x = -Math.PI / 2;
+    line.position.set(x, 0.01, -80);
+    scene.add(line);
+  });
+
+  // side rails (subtle blue glow strips)
+  const railMat = new THREE.MeshBasicMaterial({ color: 0x3a6ea5, transparent: true, opacity: 0.5 });
+  [-3.9, 3.9].forEach((x) => {
+    const railGeo = new THREE.PlaneGeometry(0.08, 200);
+    const rail = new THREE.Mesh(railGeo, railMat);
+    rail.rotation.x = -Math.PI / 2;
+    rail.position.set(x, 0.02, -80);
+    scene.add(rail);
+  });
+
+  // ---- Player ----
+  const playerGeo = new THREE.OctahedronGeometry(0.55, 0);
+  const playerMat = new THREE.MeshStandardMaterial({ color: 0xf0d878, emissive: 0x5a4413, roughness: 0.3, metalness: 0.6 });
+  const player = new THREE.Mesh(playerGeo, playerMat);
+  player.position.set(0, 0.8, 4);
+  scene.add(player);
+
+  const player_state = {
+    lane: 1,          // 0,1,2
+    x: LANE_X[1],
+    targetX: LANE_X[1],
+    y: 0.8,
+    vy: 0,
+    grounded: true
+  };
+
+  const GROUND_Y = 0.8;
+  const GRAVITY = -0.028;
+  const JUMP_V = 0.42;
+  const LANE_LERP = 0.22;
+
+  // ---- Obstacles ----
+  const obstacles = [];
+  const obstacleGeo = new THREE.BoxGeometry(1.3, 1.1, 1.1);
+  const obstacleMat = new THREE.MeshStandardMaterial({ color: 0x8a1f1f, emissive: 0x330a0a, roughness: 0.5, metalness: 0.3 });
+
+  function spawnObstacle(z) {
+    const lane = Math.floor(Math.random() * 3);
+    const mesh = new THREE.Mesh(obstacleGeo, obstacleMat);
+    mesh.position.set(LANE_X[lane], 0.55, z);
+    scene.add(mesh);
+    obstacles.push({ mesh, lane });
+  }
+
+  // ---- Coins (score boost, candy-crush-ish flourish) ----
+  const coins = [];
+  const coinGeo = new THREE.TorusGeometry(0.28, 0.1, 8, 16);
+  const coinMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, emissive: 0x3a2a08, roughness: 0.2, metalness: 0.8 });
+
+  function spawnCoin(z) {
+    const lane = Math.floor(Math.random() * 3);
+    const mesh = new THREE.Mesh(coinGeo, coinMat);
+    mesh.position.set(LANE_X[lane], 1.1, z);
+    scene.add(mesh);
+    coins.push({ mesh, lane, taken: false });
+  }
+
+  // ---- Game state ----
+  let running = false;
+  let speed = 0.16;
+  let distance = 0;
+  let nextSpawnZ = -20;
+  let particles = [];
+  let coinsCollected = 0;
+
+  // step-based speed ramp: every LEVEL_UP_DISTANCE meters, speed jumps up a notch
+  const LEVEL_UP_DISTANCE = 150;
+  const SPEED_STEP = 0.012;
+  const MAX_SPEED = 0.22;
+  let speedLevel = 0;
+
+  function resetGame() {
+    obstacles.forEach(o => scene.remove(o.mesh));
+    coins.forEach(c => scene.remove(c.mesh));
+    obstacles.length = 0;
+    coins.length = 0;
+    particles.forEach(p => scene.remove(p.mesh));
+    particles.length = 0;
+
+    player_state.lane = 1;
+    player_state.x = LANE_X[1];
+    player_state.targetX = LANE_X[1];
+    player_state.y = GROUND_Y;
+    player_state.vy = 0;
+    player_state.grounded = true;
+    player.position.set(0, GROUND_Y, 4);
+
+    speed = baseSpeed;
+    speedLevel = 0;
+    distance = 0;
+    coinsCollected = 0;
+    coinCountEl.textContent = 'COINS: 0';
+    nextSpawnZ = -20;
+
+    for (let z = -20; z > -120; z -= 7 + Math.random() * 5) {
+      if (Math.random() < 0.8) spawnObstacle(z);
+      if (Math.random() < 0.5) spawnCoin(z - 2);
+    }
+    nextSpawnZ = -122;
+  }
+
+  function endGame() {
+    running = false;
+    const dist = Math.floor(distance);
+    if (dist > best) {
+      best = dist;
+      try { localStorage.setItem('vaultRunBest', String(best)); } catch(e) {}
+      bestEl.textContent = 'BEST: ' + best + 'm';
+    }
+    overlayTitle.textContent = 'Vault Collapsed';
+    overlayText.innerHTML = 'You made it <span class="accent">' + dist + 'm</span> and collected <span class="accent">' + coinsCollected + ' coins</span> before the vault claimed you.<br>Best run: <span class="accent">' + best + 'm</span>';
+    startBtn.textContent = 'Run Again';
+    overlay.classList.remove('hidden');
+  }
+
+  function burstParticles(x, y, z, color) {
+    for (let i = 0; i < 8; i++) {
+      const geo = new THREE.SphereGeometry(0.06, 6, 6);
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      scene.add(mesh);
+      particles.push({
+        mesh,
+        vx: (Math.random() - 0.5) * 0.12,
+        vy: Math.random() * 0.12 + 0.03,
+        vz: (Math.random() - 0.5) * 0.12,
+        life: 1.0
+      });
+    }
+  }
+
+  // ---- Input: keyboard ----
+  const keys = {};
+  window.addEventListener('keydown', (e) => {
+    if (!running) return;
+    if (e.key === 'ArrowLeft' && player_state.lane > 0) {
+      player_state.lane -= 1;
+      player_state.targetX = LANE_X[player_state.lane];
+    } else if (e.key === 'ArrowRight' && player_state.lane < 2) {
+      player_state.lane += 1;
+      player_state.targetX = LANE_X[player_state.lane];
+    } else if (e.key === 'ArrowUp' && player_state.grounded) {
+      player_state.vy = JUMP_V;
+      player_state.grounded = false;
+    }
+  });
+
+  // ---- Input: gamepad (Xbox / PlayStation style controllers) ----
+  let gamepadConnected = false;
+  const gpState = { left: false, right: false, jump: false };
+
+  window.addEventListener('gamepadconnected', (e) => {
+    gamepadConnected = true;
+    controllerHint.textContent = 'CONTROLLER CONNECTED: ' + e.gamepad.id;
+    controllerHint.classList.add('show');
+  });
+  window.addEventListener('gamepaddisconnected', () => {
+    gamepadConnected = false;
+    controllerHint.classList.remove('show');
+  });
+
+  function laneLeft() {
+    if (player_state.lane > 0) {
+      player_state.lane -= 1;
+      player_state.targetX = LANE_X[player_state.lane];
+    }
+  }
+  function laneRight() {
+    if (player_state.lane < 2) {
+      player_state.lane += 1;
+      player_state.targetX = LANE_X[player_state.lane];
+    }
+  }
+  function doJump() {
+    if (player_state.grounded) {
+      player_state.vy = JUMP_V;
+      player_state.grounded = false;
+    }
+  }
+
+  function pollGamepad() {
+    if (!running) return;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = pads && pads[0];
+    if (!pad) return;
+
+    // Left stick horizontal (axis 0) + D-pad left/right (buttons 14/15), standard mapping
+    const stickX = pad.axes[0] || 0;
+    const dpadLeft = pad.buttons[14] && pad.buttons[14].pressed;
+    const dpadRight = pad.buttons[15] && pad.buttons[15].pressed;
+    const leftHeld = stickX < -0.5 || dpadLeft;
+    const rightHeld = stickX > 0.5 || dpadRight;
+    const jumpHeld = pad.buttons[0] && pad.buttons[0].pressed; // A / Cross
+
+    if (leftHeld && !gpState.left) laneLeft();
+    if (rightHeld && !gpState.right) laneRight();
+    if (jumpHeld && !gpState.jump) doJump();
+
+    gpState.left = leftHeld;
+    gpState.right = rightHeld;
+    gpState.jump = jumpHeld;
+  }
+
+  startBtn.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    resetGame();
+    running = true;
+  });
+
+  // ---- Main loop ----
+  function animate() {
+    requestAnimationFrame(animate);
+
+    if (running) {
+      pollGamepad();
+      distance += speed * 6;
+      scoreEl.textContent = 'DISTANCE: ' + Math.floor(distance) + 'm';
+
+      // step-based speed ramp: bump speed once per LEVEL_UP_DISTANCE crossed
+      const currentLevel = Math.floor(distance / LEVEL_UP_DISTANCE);
+      if (currentLevel > speedLevel) {
+        speedLevel = currentLevel;
+        speed = Math.min(baseSpeed + speedLevel * SPEED_STEP, MAX_SPEED);
+      }
+
+      // lane movement (smooth lerp)
+      player_state.x += (player_state.targetX - player_state.x) * LANE_LERP;
+      player.position.x = player_state.x;
+
+      // gravity / jump
+      player_state.vy += GRAVITY;
+      player_state.y += player_state.vy;
+      if (player_state.y <= GROUND_Y) {
+        player_state.y = GROUND_Y;
+        player_state.vy = 0;
+        player_state.grounded = true;
+      }
+      player.position.y = player_state.y;
+      player.rotation.y += 0.04;
+      player.rotation.x += 0.015;
+
+      // move world toward camera
+      const dz = speed * 6;
+      obstacles.forEach(o => { o.mesh.position.z += dz; });
+      coins.forEach(c => { c.mesh.position.z += dz; c.mesh.rotation.y += 0.08; });
+
+      // collision: obstacles
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        if (o.mesh.position.z > 6.5) {
+          scene.remove(o.mesh);
+          obstacles.splice(i, 1);
+          continue;
+        }
+        if (Math.abs(o.mesh.position.z - player.position.z) < 0.6 &&
+            o.lane === player_state.lane &&
+            player.position.y < 1.15) {
+          endGame();
+          return;
+        }
+      }
+
+      // collision: coins
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        if (c.mesh.position.z > 6.5) {
+          scene.remove(c.mesh);
+          coins.splice(i, 1);
+          continue;
+        }
+        if (!c.taken && Math.abs(c.mesh.position.z - player.position.z) < 0.6 && c.lane === player_state.lane) {
+          c.taken = true;
+          distance += 3;
+          coinsCollected += 1;
+          coinCountEl.textContent = 'COINS: ' + coinsCollected;
+          burstParticles(c.mesh.position.x, c.mesh.position.y, c.mesh.position.z, 0xf0d878);
+          scene.remove(c.mesh);
+          coins.splice(i, 1);
+        }
+      }
+
+      // spawn more track ahead
+      let furthest = nextSpawnZ;
+      obstacles.forEach(o => { if (o.mesh.position.z - dz < furthest) furthest = Math.min(furthest, o.mesh.position.z); });
+      if (obstacles.length < 14) {
+        const z = nextSpawnZ;
+        if (Math.random() < 0.85) spawnObstacle(z);
+        if (Math.random() < 0.5) spawnCoin(z - 2.5);
+        nextSpawnZ -= 7 + Math.random() * 5;
+      }
+
+      // particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.mesh.position.x += p.vx;
+        p.mesh.position.y += p.vy;
+        p.mesh.position.z += p.vz + dz;
+        p.vy -= 0.01;
+        p.life -= 0.04;
+        p.mesh.material.opacity = Math.max(p.life, 0);
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          particles.splice(i, 1);
+        }
+      }
+
+      goldLight.position.x = player.position.x;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+})();
+</script>
+
+</body>
+</html>
