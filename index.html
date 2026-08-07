@@ -158,6 +158,48 @@
     z-index: 10;
   }
 
+  #toastWrap {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 30;
+  }
+
+  .toast {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    letter-spacing: 0.04em;
+    padding: 10px 26px;
+    border: 1px solid var(--tier-accent, var(--gold));
+    background: rgba(10,10,12,0.75);
+    color: var(--tier-accent, var(--gold-bright));
+    text-shadow: 0 0 16px var(--tier-accent, rgba(212,175,55,0.5));
+    box-shadow: 0 0 30px rgba(0,0,0,0.4);
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    white-space: nowrap;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .toast.coin {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
   #controllerHint {
     position: absolute;
     top: 24px; right: 24px;
@@ -207,6 +249,7 @@
 
   <div id="hint">← → SWITCH LANE &nbsp;·&nbsp; ↑ JUMP &nbsp;·&nbsp; OR USE A CONTROLLER</div>
   <div id="controllerHint">CONTROLLER CONNECTED</div>
+  <div id="toastWrap"></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -222,6 +265,7 @@
   const overlayText = overlay.querySelector('p');
   const diffButtons = Array.from(document.querySelectorAll('.diffBtn'));
   const controllerHint = document.getElementById('controllerHint');
+  const toastWrap = document.getElementById('toastWrap');
 
   let best = 0;
   try { best = parseInt(localStorage.getItem('vaultRunBest') || '0', 10); } catch(e) { best = 0; }
@@ -358,6 +402,59 @@
   const MAX_SPEED = 0.22;
   let speedLevel = 0;
 
+  // ---- Milestone tiers: colour scheme shifts + hint toasts as you go deeper ----
+  const TIERS = [
+    { at: 0,    name: 'The Gold Vault',    fog: 0x0a0a0c, ambient: 0x3a3a40, glow: 0xd4af37, rail: 0x3a6ea5, msg: null },
+    { at: 100,  name: 'The Sapphire Deep', fog: 0x070a10, ambient: 0x2a3648, glow: 0x4a90d9, rail: 0x4a90d9, msg: '100m — Entering the Sapphire Deep' },
+    { at: 200,  name: 'The Crimson Hold',  fog: 0x120808, ambient: 0x402828, glow: 0xd94a4a, rail: 0xd94a4a, msg: '200m — The Crimson Hold' },
+    { at: 500,  name: 'The Emerald Vault', fog: 0x081209, ambient: 0x284030, glow: 0x4ad98a, rail: 0x4ad98a, msg: '500m — The Emerald Vault Opens' },
+    { at: 1000, name: 'The Obsidian Core', fog: 0x08080c, ambient: 0x2a2a3a, glow: 0xb890f0, rail: 0xb890f0, msg: '1000m — You\'ve reached the Obsidian Core' }
+  ];
+  let tierIndex = 0;
+
+  const COIN_MILESTONES = [10, 25, 50, 100, 200];
+  let coinMilestoneIndex = 0;
+
+  function applyTier(tier) {
+    scene.fog.color.setHex(tier.fog);
+    scene.background.setHex(tier.fog);
+    ambient.color.setHex(tier.ambient);
+    goldLight.color.setHex(tier.glow);
+    railMat.color.setHex(tier.rail);
+    lineMat.color.setHex(tier.glow);
+    document.documentElement.style.setProperty('--tier-accent', '#' + tier.glow.toString(16).padStart(6, '0'));
+  }
+
+  function showToast(text, isCoin) {
+    const t = document.createElement('div');
+    t.className = 'toast' + (isCoin ? ' coin' : '');
+    t.textContent = text;
+    toastWrap.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => {
+      t.classList.remove('show');
+      setTimeout(() => t.remove(), 400);
+    }, 2200);
+  }
+
+  function checkMilestones() {
+    // distance / tier milestones
+    for (let i = tierIndex + 1; i < TIERS.length; i++) {
+      if (distance >= TIERS[i].at) {
+        tierIndex = i;
+        applyTier(TIERS[i]);
+        if (TIERS[i].msg) showToast(TIERS[i].msg, false);
+      } else {
+        break;
+      }
+    }
+    // coin milestones
+    while (coinMilestoneIndex < COIN_MILESTONES.length && coinsCollected >= COIN_MILESTONES[coinMilestoneIndex]) {
+      showToast(COIN_MILESTONES[coinMilestoneIndex] + ' Coins Collected', true);
+      coinMilestoneIndex += 1;
+    }
+  }
+
   function resetGame() {
     obstacles.forEach(o => scene.remove(o.mesh));
     coins.forEach(c => scene.remove(c.mesh));
@@ -379,6 +476,9 @@
     distance = 0;
     coinsCollected = 0;
     coinCountEl.textContent = 'COINS: 0';
+    tierIndex = 0;
+    coinMilestoneIndex = 0;
+    applyTier(TIERS[0]);
     nextSpawnZ = -20;
 
     for (let z = -20; z > -120; z -= 7 + Math.random() * 5) {
@@ -505,6 +605,8 @@
       pollGamepad();
       distance += speed * 6;
       scoreEl.textContent = 'DISTANCE: ' + Math.floor(distance) + 'm';
+
+      checkMilestones();
 
       // step-based speed ramp: bump speed once per LEVEL_UP_DISTANCE crossed
       const currentLevel = Math.floor(distance / LEVEL_UP_DISTANCE);
