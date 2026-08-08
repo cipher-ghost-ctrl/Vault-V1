@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>The Vault Run</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono&display=swap');
@@ -21,12 +21,17 @@
     width: 100%; height: 100%;
     background: var(--bg);
     overflow: hidden;
+    position: fixed;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
     font-family: 'DM Sans', sans-serif;
     color: var(--text);
   }
 
-  #canvas-wrap { position: relative; width: 100vw; height: 100vh; }
-  canvas { display: block; }
+  #canvas-wrap { position: relative; width: 100vw; height: 100vh; touch-action: none; }
+  canvas { display: block; touch-action: none; }
 
   #hud {
     position: absolute;
@@ -200,6 +205,36 @@
     text-transform: uppercase;
   }
 
+  #touchHint {
+    display: none;
+  }
+
+  @media (max-width: 600px), (pointer: coarse) {
+    #title { font-size: 1.05rem; }
+    #score { font-size: 0.85rem; }
+    #coinCount { font-size: 0.72rem; }
+    #best { font-size: 0.68rem; }
+    #overlay h1 { font-size: 1.8rem; }
+    #overlay p { font-size: 0.85rem; max-width: 300px; }
+    #startBtn { padding: 13px 30px; font-size: 0.85rem; }
+    .diffBtn { padding: 9px 16px; font-size: 0.75rem; }
+    .toast { font-size: 1rem; padding: 8px 18px; }
+    #hint { display: none; }
+    #touchHint {
+      display: block;
+      position: absolute;
+      bottom: 18px; left: 0; right: 0;
+      text-align: center;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      letter-spacing: 0.06em;
+      color: var(--text);
+      opacity: 0.4;
+      z-index: 10;
+    }
+    #controllerHint { display: none; }
+  }
+
   #controllerHint {
     position: absolute;
     top: 24px; right: 24px;
@@ -248,6 +283,7 @@
   </div>
 
   <div id="hint">← → SWITCH LANE &nbsp;·&nbsp; ↑ JUMP &nbsp;·&nbsp; OR USE A CONTROLLER</div>
+  <div id="touchHint">SWIPE LEFT/RIGHT TO MOVE &nbsp;·&nbsp; SWIPE UP TO JUMP</div>
   <div id="controllerHint">CONTROLLER CONNECTED</div>
   <div id="toastWrap"></div>
 </div>
@@ -293,11 +329,20 @@
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   wrap.appendChild(renderer.domElement);
+  renderer.domElement.style.touchAction = 'none';
+  renderer.domElement.style.webkitUserSelect = 'none';
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }, 200);
   });
 
   // ---- Lighting ----
@@ -589,6 +634,54 @@
     gpState.right = rightHeld;
     gpState.jump = jumpHeld;
   }
+
+  // ---- Input: touch (swipe left/right to change lane, swipe up to jump) ----
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchStartTime = 0;
+  let touchHandled = false;
+  const SWIPE_MIN_DIST = 24;
+  const SWIPE_MAX_TIME = 700;
+
+  function onTouchStart(e) {
+    if (!e.touches || e.touches.length !== 1) return;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = Date.now();
+    touchHandled = false;
+  }
+
+  function onTouchMove(e) {
+    // Prevent iOS Safari's pull-to-refresh / page bounce from hijacking the gesture,
+    // and fire the swipe as soon as the threshold is crossed (don't wait for touchend).
+    if (e.touches && e.touches.length === 1) {
+      e.preventDefault();
+      if (!running || touchHandled) return;
+
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      if (absX < SWIPE_MIN_DIST && absY < SWIPE_MIN_DIST) return;
+
+      touchHandled = true;
+      if (absX > absY) {
+        if (dx < 0) laneLeft(); else laneRight();
+      } else if (dy < 0) {
+        doJump();
+      }
+    }
+  }
+
+  function onTouchEnd(e) {
+    touchHandled = false;
+  }
+
+  window.addEventListener('touchstart', onTouchStart, { passive: true });
+  window.addEventListener('touchmove', onTouchMove, { passive: false });
+  window.addEventListener('touchend', onTouchEnd, { passive: true });
+  window.addEventListener('touchcancel', onTouchEnd, { passive: true });
 
   startBtn.addEventListener('click', () => {
     overlay.classList.add('hidden');
