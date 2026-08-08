@@ -325,6 +325,21 @@
   camera.position.set(0, 4.2, 7.5);
   camera.lookAt(0, 1, -6);
 
+  // Keep a minimum horizontal field of view so all 3 lanes stay visible on narrow
+  // (portrait phone) screens — a fixed vertical FOV alone crops the outer lanes off-screen.
+  const MIN_HORIZONTAL_FOV_DEG = 58;
+  function fitCameraToAspect() {
+    const aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = aspect;
+    const minHorizontalFovRad = THREE.MathUtils.degToRad(MIN_HORIZONTAL_FOV_DEG);
+    // Vertical FOV needed to guarantee that horizontal FOV at this aspect ratio
+    const requiredVerticalFovRad = 2 * Math.atan(Math.tan(minHorizontalFovRad / 2) / aspect);
+    const requiredVerticalFovDeg = THREE.MathUtils.radToDeg(requiredVerticalFovRad);
+    camera.fov = Math.max(62, Math.min(100, requiredVerticalFovDeg));
+    camera.updateProjectionMatrix();
+  }
+  fitCameraToAspect();
+
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -332,15 +347,15 @@
   renderer.domElement.style.touchAction = 'none';
   renderer.domElement.style.webkitUserSelect = 'none';
 
+  const clock = new THREE.Clock();
+
   window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
+    fitCameraToAspect();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
   window.addEventListener('orientationchange', () => {
     setTimeout(() => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
+      fitCameraToAspect();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }, 200);
   });
@@ -693,9 +708,15 @@
   function animate() {
     requestAnimationFrame(animate);
 
+    // Normalize movement to real elapsed time, not frame count — keeps speed/difficulty
+    // consistent even if the device's frame rate dips (common on mobile browsers).
+    const rawDelta = clock.getDelta();
+    const delta = Math.min(rawDelta, 0.1); // clamp so a stalled tab doesn't cause a huge jump
+    const dtScale = delta / (1 / 60); // 1.0 at a steady 60fps, tuned values assume that baseline
+
     if (running) {
       pollGamepad();
-      distance += speed * 6;
+      distance += speed * 6 * dtScale;
       scoreEl.textContent = 'DISTANCE: ' + Math.floor(distance) + 'm';
 
       checkMilestones();
@@ -707,26 +728,27 @@
         speed = Math.min(baseSpeed + speedLevel * SPEED_STEP, MAX_SPEED);
       }
 
-      // lane movement (smooth lerp)
-      player_state.x += (player_state.targetX - player_state.x) * LANE_LERP;
+      // lane movement (smooth lerp, frame-rate independent)
+      const laneLerpAmount = 1 - Math.pow(1 - LANE_LERP, dtScale);
+      player_state.x += (player_state.targetX - player_state.x) * laneLerpAmount;
       player.position.x = player_state.x;
 
       // gravity / jump
-      player_state.vy += GRAVITY;
-      player_state.y += player_state.vy;
+      player_state.vy += GRAVITY * dtScale;
+      player_state.y += player_state.vy * dtScale;
       if (player_state.y <= GROUND_Y) {
         player_state.y = GROUND_Y;
         player_state.vy = 0;
         player_state.grounded = true;
       }
       player.position.y = player_state.y;
-      player.rotation.y += 0.04;
-      player.rotation.x += 0.015;
+      player.rotation.y += 0.04 * dtScale;
+      player.rotation.x += 0.015 * dtScale;
 
       // move world toward camera
-      const dz = speed * 6;
+      const dz = speed * 6 * dtScale;
       obstacles.forEach(o => { o.mesh.position.z += dz; });
-      coins.forEach(c => { c.mesh.position.z += dz; c.mesh.rotation.y += 0.08; });
+      coins.forEach(c => { c.mesh.position.z += dz; c.mesh.rotation.y += 0.08 * dtScale; });
 
       // collision: obstacles
       for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -764,8 +786,6 @@
       }
 
       // spawn more track ahead
-      let furthest = nextSpawnZ;
-      obstacles.forEach(o => { if (o.mesh.position.z - dz < furthest) furthest = Math.min(furthest, o.mesh.position.z); });
       if (obstacles.length < 14) {
         const z = nextSpawnZ;
         if (Math.random() < 0.85) spawnObstacle(z);
@@ -776,11 +796,11 @@
       // particles
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.mesh.position.x += p.vx;
-        p.mesh.position.y += p.vy;
-        p.mesh.position.z += p.vz + dz;
-        p.vy -= 0.01;
-        p.life -= 0.04;
+        p.mesh.position.x += p.vx * dtScale;
+        p.mesh.position.y += p.vy * dtScale;
+        p.mesh.position.z += p.vz * dtScale + dz;
+        p.vy -= 0.01 * dtScale;
+        p.life -= 0.04 * dtScale;
         p.mesh.material.opacity = Math.max(p.life, 0);
         if (p.life <= 0) {
           scene.remove(p.mesh);
