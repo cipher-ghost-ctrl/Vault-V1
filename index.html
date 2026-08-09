@@ -279,7 +279,7 @@
 
   <div id="overlay">
     <h1>The Vault Run</h1>
-    <p>Three lanes. No mercy. Weave through the vault before it collapses on you.<br><span class="accent">← → to switch lanes · ↑ to jump</span><br><span class="accent">Controller: stick/D-pad to choose · A to select</span></p>
+    <p>Three lanes. No mercy. Weave through the vault before it collapses on you.<br><span class="accent">← → to switch lanes · ↑ to jump</span><br><span class="accent">Controller: stick/D-pad to navigate · A to select</span></p>
     <div id="diffChoice">
       <button class="diffBtn" data-speed="0.05">Easy</button>
       <button class="diffBtn selected" data-speed="0.08">Medium</button>
@@ -319,7 +319,8 @@
       diffButtons.forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       baseSpeed = parseFloat(btn.dataset.speed);
-      menuFocusIndex = i;
+      menuRow = 0;
+      menuCol = i;
       updateMenuFocusVisual();
     });
   });
@@ -567,7 +568,8 @@
     overlayText.innerHTML = 'You made it <span class="accent">' + dist + 'm</span> and collected <span class="accent">' + coinsCollected + ' coins</span> before the vault claimed you.<br>Best run: <span class="accent">' + best + 'm</span>';
     startBtn.textContent = 'Run Again';
     overlay.classList.remove('hidden');
-    menuFocusIndex = menuItems.length - 1; // focus the Run Again button by default
+    menuRow = 1;
+    menuCol = 0; // focus the Run Again button by default
     updateMenuFocusVisual();
   }
 
@@ -660,14 +662,24 @@
     gpState.jump = jumpHeld;
   }
 
-  // ---- Gamepad menu navigation (left stick / D-pad moves focus, A/Cross selects) ----
-  const menuItems = [...diffButtons, startBtn];
-  let menuFocusIndex = diffButtons.findIndex(b => b.classList.contains('selected'));
-  if (menuFocusIndex < 0) menuFocusIndex = 0;
-  const gpMenuState = { left: false, right: false, confirm: false };
+  // ---- Gamepad menu navigation (free-form: left/right within a row, up/down between rows) ----
+  // Matches the actual on-screen layout: row 0 = [Easy, Medium, Hard], row 1 = [Begin the Run]
+  const menuGrid = [diffButtons, [startBtn]];
+  let menuRow = 0;
+  let menuCol = diffButtons.findIndex(b => b.classList.contains('selected'));
+  if (menuCol < 0) menuCol = 0;
+  const gpMenuState = { left: false, right: false, up: false, down: false, confirm: false };
+
+  function currentMenuItem() {
+    return menuGrid[menuRow][menuCol];
+  }
 
   function updateMenuFocusVisual() {
-    menuItems.forEach((el, i) => el.classList.toggle('gp-focus', i === menuFocusIndex));
+    menuGrid.forEach((row, r) => {
+      row.forEach((el, c) => {
+        el.classList.toggle('gp-focus', r === menuRow && c === menuCol);
+      });
+    });
   }
   updateMenuFocusVisual();
 
@@ -678,26 +690,44 @@
     if (!pad) return;
 
     const stickX = pad.axes[0] || 0;
+    const stickY = pad.axes[1] || 0;
+    const dpadUp = pad.buttons[12] && pad.buttons[12].pressed;
+    const dpadDown = pad.buttons[13] && pad.buttons[13].pressed;
     const dpadLeft = pad.buttons[14] && pad.buttons[14].pressed;
     const dpadRight = pad.buttons[15] && pad.buttons[15].pressed;
+
     const leftHeld = stickX < -0.5 || dpadLeft;
     const rightHeld = stickX > 0.5 || dpadRight;
+    const upHeld = stickY < -0.5 || dpadUp;
+    const downHeld = stickY > 0.5 || dpadDown;
     const confirmHeld = pad.buttons[0] && pad.buttons[0].pressed; // A / Cross
 
     if (leftHeld && !gpMenuState.left) {
-      menuFocusIndex = (menuFocusIndex - 1 + menuItems.length) % menuItems.length;
+      menuCol = Math.max(0, menuCol - 1);
       updateMenuFocusVisual();
     }
     if (rightHeld && !gpMenuState.right) {
-      menuFocusIndex = (menuFocusIndex + 1) % menuItems.length;
+      menuCol = Math.min(menuGrid[menuRow].length - 1, menuCol + 1);
+      updateMenuFocusVisual();
+    }
+    if (downHeld && !gpMenuState.down) {
+      menuRow = Math.min(menuGrid.length - 1, menuRow + 1);
+      menuCol = Math.min(menuGrid[menuRow].length - 1, menuCol);
+      updateMenuFocusVisual();
+    }
+    if (upHeld && !gpMenuState.up) {
+      menuRow = Math.max(0, menuRow - 1);
+      menuCol = Math.min(menuGrid[menuRow].length - 1, menuCol);
       updateMenuFocusVisual();
     }
     if (confirmHeld && !gpMenuState.confirm) {
-      menuItems[menuFocusIndex].click();
+      currentMenuItem().click();
     }
 
     gpMenuState.left = leftHeld;
     gpMenuState.right = rightHeld;
+    gpMenuState.up = upHeld;
+    gpMenuState.down = downHeld;
     gpMenuState.confirm = confirmHeld;
   }
 
