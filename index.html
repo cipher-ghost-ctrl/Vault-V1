@@ -102,6 +102,12 @@
     color: var(--gold-bright);
   }
 
+  .gp-focus {
+    outline: 2px solid var(--gold-bright);
+    outline-offset: 3px;
+    box-shadow: 0 0 16px rgba(240,216,120,0.5);
+  }
+
   #overlay {
     position: absolute; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -273,7 +279,7 @@
 
   <div id="overlay">
     <h1>The Vault Run</h1>
-    <p>Three lanes. No mercy. Weave through the vault before it collapses on you.<br><span class="accent">← → to switch lanes · ↑ to jump</span></p>
+    <p>Three lanes. No mercy. Weave through the vault before it collapses on you.<br><span class="accent">← → to switch lanes · ↑ to jump</span><br><span class="accent">Controller: stick/D-pad to choose · A to select</span></p>
     <div id="diffChoice">
       <button class="diffBtn" data-speed="0.05">Easy</button>
       <button class="diffBtn selected" data-speed="0.08">Medium</button>
@@ -308,11 +314,13 @@
   bestEl.textContent = 'BEST: ' + best + 'm';
 
   let baseSpeed = 0.08; // medium default
-  diffButtons.forEach(btn => {
+  diffButtons.forEach((btn, i) => {
     btn.addEventListener('click', () => {
       diffButtons.forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       baseSpeed = parseFloat(btn.dataset.speed);
+      menuFocusIndex = i;
+      updateMenuFocusVisual();
     });
   });
 
@@ -559,6 +567,8 @@
     overlayText.innerHTML = 'You made it <span class="accent">' + dist + 'm</span> and collected <span class="accent">' + coinsCollected + ' coins</span> before the vault claimed you.<br>Best run: <span class="accent">' + best + 'm</span>';
     startBtn.textContent = 'Run Again';
     overlay.classList.remove('hidden');
+    menuFocusIndex = menuItems.length - 1; // focus the Run Again button by default
+    updateMenuFocusVisual();
   }
 
   function burstParticles(x, y, z, color) {
@@ -650,6 +660,47 @@
     gpState.jump = jumpHeld;
   }
 
+  // ---- Gamepad menu navigation (left stick / D-pad moves focus, A/Cross selects) ----
+  const menuItems = [...diffButtons, startBtn];
+  let menuFocusIndex = diffButtons.findIndex(b => b.classList.contains('selected'));
+  if (menuFocusIndex < 0) menuFocusIndex = 0;
+  const gpMenuState = { left: false, right: false, confirm: false };
+
+  function updateMenuFocusVisual() {
+    menuItems.forEach((el, i) => el.classList.toggle('gp-focus', i === menuFocusIndex));
+  }
+  updateMenuFocusVisual();
+
+  function pollGamepadMenu() {
+    if (running) return; // only navigate the menu while the overlay is up
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = pads && pads[0];
+    if (!pad) return;
+
+    const stickX = pad.axes[0] || 0;
+    const dpadLeft = pad.buttons[14] && pad.buttons[14].pressed;
+    const dpadRight = pad.buttons[15] && pad.buttons[15].pressed;
+    const leftHeld = stickX < -0.5 || dpadLeft;
+    const rightHeld = stickX > 0.5 || dpadRight;
+    const confirmHeld = pad.buttons[0] && pad.buttons[0].pressed; // A / Cross
+
+    if (leftHeld && !gpMenuState.left) {
+      menuFocusIndex = (menuFocusIndex - 1 + menuItems.length) % menuItems.length;
+      updateMenuFocusVisual();
+    }
+    if (rightHeld && !gpMenuState.right) {
+      menuFocusIndex = (menuFocusIndex + 1) % menuItems.length;
+      updateMenuFocusVisual();
+    }
+    if (confirmHeld && !gpMenuState.confirm) {
+      menuItems[menuFocusIndex].click();
+    }
+
+    gpMenuState.left = leftHeld;
+    gpMenuState.right = rightHeld;
+    gpMenuState.confirm = confirmHeld;
+  }
+
   // ---- Input: touch (swipe left/right to change lane, swipe up to jump) ----
   let touchStartX = 0;
   let touchStartY = 0;
@@ -713,6 +764,8 @@
     const rawDelta = clock.getDelta();
     const delta = Math.min(rawDelta, 0.1); // clamp so a stalled tab doesn't cause a huge jump
     const dtScale = delta / (1 / 60); // 1.0 at a steady 60fps, tuned values assume that baseline
+
+    pollGamepadMenu();
 
     if (running) {
       pollGamepad();
